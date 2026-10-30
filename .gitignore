@@ -9,3 +9,6 @@ dist
 .claude
 .vscode
 .idea
+
+# Local backup files
+*.backup

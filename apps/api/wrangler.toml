@@ -14,8 +14,8 @@ run_worker_first = ["/api/*"]
 [[d1_databases]]
 binding = "DB"
 database_name = "store-db"
-database_id = "d7d6e6dd-5bfa-4e71-a6bd-dd6bb85c7255"
+database_id = "34aa5f15-0ecd-4ff0-bc91-e8d45383a71c"
 
 [[kv_namespaces]]
 binding = "CART"
-id = "40add3e30708404f8e8dcde8fc0c5d28"
+id = "8ecbf1bce84942e98f05820849d1c19f"
