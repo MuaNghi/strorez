@@ -15,6 +15,7 @@ run_worker_first = ["/api/*"]
 binding = "DB"
 database_name = "store-db"
 database_id = "34aa5f15-0ecd-4ff0-bc91-e8d45383a71c"
+migrations_dir = "migrations"
 
 [[kv_namespaces]]
 binding = "CART"

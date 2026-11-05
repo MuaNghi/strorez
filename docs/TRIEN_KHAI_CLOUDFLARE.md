@@ -1,16 +1,15 @@
-# Báo cáo triển khai Store lên Cloudflare
+# Báo cáo triển khai Storez lên Cloudflare
 
 ## 1. Tổng quan
 
-Store là ứng dụng cửa hàng demo dạng monorepo npm workspaces. Frontend React được build bằng Vite; API dùng Hono chạy trên Cloudflare Workers. Worker đồng thời phục vụ các file frontend đã build, vì vậy dự án hiện không cần triển khai Cloudflare Pages riêng.npm run db:init:remote -w apps/api
+Storez là ứng dụng cửa hàng dạng monorepo npm workspaces. Frontend React được build bằng Vite; API dùng Hono chạy trên Cloudflare Workers. Worker đồng thời phục vụ các file frontend đã build, vì vậy dự án hiện không cần triển khai Cloudflare Pages riêng.
 
 Các dịch vụ Cloudflare được sử dụng:
 
-- **Workers**: chạy API và phục vụ giao diện web.
+- - **Workers**: chạy API và phục vụ giao diện web.
 - **Workers Static Assets**: phân phối nội dung trong `apps/web/dist`.
 - **D1**: lưu danh sách sản phẩm.
 - **KV**: lưu giỏ hàng theo mã do trình duyệt tạo; thời hạn hiện là 30 ngày.
-tạo báo cáo chi tiết cách triển khai dự án này lên cloudflare lưu báo cáo tại docv/
 Cấu hình triển khai nằm trong `apps/api/wrangler.toml`. Đường dẫn asset được khai báo là `../web/dist`; route `/api/*` được chuyển đến Worker trước khi xử lý asset, các đường dẫn khác hỗ trợ SPA fallback.
 
 ## 2. Điều kiện cần có
@@ -59,20 +58,39 @@ id = "<KV_NAMESPACE_ID>"
 
 Trong workspace hiện tại đã có ID được điền sẵn. Chỉ thay chúng nếu kết quả kiểm tra cho thấy ID không thuộc database/namespace dự định dùng. Các ID này không phải API secret, nhưng không được nhầm ID local với tài nguyên production.
 
-## 4. Khởi tạo D1 production
+## 4. Khởi tạo và cập nhật D1
 
-Chỉ khởi tạo database production mới, đang rỗng. Từ `apps/api`, chạy schema và seed riêng từng bước:
+Các migration trong `apps/api/migrations` tạo những bảng và cột cho đơn hàng, vai trò, tồn kho, danh mục, đánh giá, khuyến mãi, cài đặt, metadata trái cây, biến thể và nguồn xác minh. Với một database mới, khởi tạo schema nền, tài khoản, phiên đăng nhập, sản phẩm mẫu rồi áp dụng migration:
 
 ```bash
-npx wrangler d1 execute store-db --remote --file=./schema.sql
-npx wrangler d1 execute store-db --remote --file=./seed.sql
+npm run db:init
 ```
 
-**Cảnh báo dữ liệu:** `schema.sql` bắt đầu bằng `DROP TABLE IF EXISTS products`, nên chạy lại sẽ xóa bảng sản phẩm hiện tại và dữ liệu trong đó. `seed.sql` chèn 12 sản phẩm nhưng không chống chèn trùng. Vì vậy, không chạy lại các lệnh trên đối với database đang có dữ liệu.
+Lệnh trên chỉ tác động D1 local. Để khởi tạo một database production mới, đang rỗng:
 
-Script `npm run db:init:remote` hiện chạy cả hai file theo thứ tự và do đó cũng có thể xóa dữ liệu production. Không dùng script này như một lệnh cập nhật thông thường. Trước khi thay đổi schema của database đã dùng, cần có bản sao lưu và quy trình migration có kiểm soát; repository hiện chưa có bộ migration production.
+```bash
+npm run db:init:remote
+```
 
-`npm run db:init` không có `--remote`, nên chỉ khởi tạo D1 local.
+**Cảnh báo:** chỉ dùng `db:init` hoặc `db:init:remote` cho database mới. `schema.sql` có `DROP TABLE IF EXISTS products`, còn `seed.sql` chèn sản phẩm mẫu; chạy lại có thể xóa dữ liệu sản phẩm hoặc chèn trùng.
+
+Với database đã khởi tạo và đang có dữ liệu, chỉ áp dụng các migration chưa chạy:
+
+```bash
+npm run db:migrate
+npm run db:migrate:remote
+```
+
+Trước khi áp dụng migration lên production, hãy sao lưu D1 và kiểm tra migration trên môi trường local/staging. Không chạy lại các file schema/seed nền trên database đang sử dụng.
+
+Các migration production cần được rà soát trước khi áp dụng. `0008` không ghi đè tồn kho hay tạo mã khuyến mãi mẫu; `0009` bổ sung schema và danh mục nhưng giữ nguyên các bản ghi sản phẩm; `0011` bổ sung nhóm danh mục tổng quát và ẩn các danh mục cũ; `0012_seed_fruit_catalog.sql` thêm 10 sản phẩm SAMPLE cùng ảnh, giá và tồn kho đã chọn. Migration nhập sản phẩm dùng SKU để tránh chèn trùng khi chạy lại. Luôn sao lưu D1 và xác nhận các giá/tồn kho SAMPLE có thể xuất hiện công khai trước khi áp dụng `0012`.
+
+Để chức năng tải ảnh trong Admin hoạt động trên Worker production, cấu hình các giá trị ImageKit dưới dạng Worker secrets (không lưu trong mã nguồn):
+
+```bash
+npx wrangler secret put IMAGEKIT_PRIVATE_KEY
+npx wrangler secret put IMAGEKIT_URL_ENDPOINT
+```
 
 ## 5. Kiểm tra và build
 
@@ -114,8 +132,8 @@ Invoke-RestMethod "$baseUrl/api/cart" -Headers $headers
 
 Kết quả mong đợi:
 
-- `/` trả giao diện Store.
-- `/api/products` trả JSON danh sách sản phẩm; database mới được seed sẽ có 12 sản phẩm.
+- `/` trả giao diện Storez.
+- `/api/products` trả object gồm `data` và `pagination`. Sản phẩm phải đang bật và thuộc danh mục đang hoạt động; dữ liệu `SAMPLE` được hiển thị như yêu cầu hiện tại, còn dữ liệu `VERIFIED` cần có `verification_source`. Giá và tồn kho SAMPLE là dữ liệu tham khảo, không phải thông tin đã xác minh.
 - `/api/cart` trả giỏ rỗng ban đầu với `items`, `total`, `count`.
 
 Có thể kiểm tra thao tác thêm sản phẩm bằng mã giỏ kiểm thử riêng:
@@ -134,13 +152,23 @@ Có thể gắn custom domain cho Worker từ phần cấu hình Domains & Route
 
 Để phát hành phiên bản mới, cập nhật mã nguồn rồi chạy lại `npm run deploy`. Không cần khởi tạo lại D1 hoặc KV khi chỉ deploy code/frontend.
 
-## 9. Giới hạn trước khi dùng thực tế
+## 9. Quản trị cửa hàng
 
-- Thanh toán hiện chỉ là demo phía giao diện; chưa tạo đơn hàng hay tích hợp cổng thanh toán.
-- Chưa có tài khoản người dùng, phân quyền quản trị, tồn kho hoặc lịch sử đơn hàng.
+Đăng ký tài khoản trong cửa hàng, sau đó cấp quyền quản trị cho email đó trên đúng D1 database. Ví dụ với production, chạy từ `apps/api`:
+
+```bash
+npx wrangler d1 execute store-db --remote --command "UPDATE users SET role = 'ADMIN' WHERE email = 'admin@example.com'"
+```
+
+Khu vực quản trị cung cấp tổng quan, quản lý sản phẩm/danh mục/kho, biến thể và tồn kho từng quy cách, đơn hàng, khách hàng, thanh toán demo, mã khuyến mãi, đánh giá và cài đặt cửa hàng. Sản phẩm chỉ xuất hiện ở cửa hàng khi quản trị viên bổ sung nguồn xác minh và đánh dấu dữ liệu đã xác minh. Mọi API `/api/admin/*` đều yêu cầu phiên đăng nhập có vai trò `ADMIN`.
+
+## 10. Giới hạn trước khi dùng thực tế
+
+- Thanh toán chuyển khoản hiện là demo; chưa tích hợp hoặc xác nhận thanh toán qua cổng thanh toán thật.
+- Trạng thái thanh toán trong trang quản trị chỉ ghi nhận demo; cần tích hợp và đối soát với cổng thanh toán trước khi dùng thực tế.
 - Giỏ hàng được định danh bằng `x-cart-id` do client tạo, không phải danh tính đã xác thực.
-- `seed.sql` là dữ liệu mẫu, ảnh dùng dịch vụ ảnh placeholder.
-- Chưa có quy trình migration production; schema hiện tại có lệnh xóa bảng khi chạy lại.
+- `seed.sql` là dữ liệu mẫu. Mười sản phẩm ở migration `0012_seed_fruit_catalog.sql` mang trạng thái `SAMPLE`; giá và tồn kho của chúng là số liệu demo được hiển thị công khai, không phải thông tin đã xác minh.
+- Migration đã được quản lý bằng Wrangler D1; tuy nhiên schema nền vẫn có thao tác xóa bảng khi khởi tạo lại, nên chỉ chạy các lệnh `db:init*` trên database mới.
 - Chưa khai báo môi trường staging/production riêng trong Wrangler. Cần bổ sung cấu hình tách biệt trước khi vận hành nhiều môi trường.
-
-Do đó, cấu hình phù hợp để demo hoặc triển khai thử nghiệm; cần bổ sung nghiệp vụ đơn hàng, bảo vệ dữ liệu và quy trình migration trước khi dùng làm cửa hàng production.
+- Catalog trái cây và ảnh cần được kiểm chứng trước khi xem là thông tin bán hàng chính thức; không nhập thành phần, hạn sử dụng hoặc nguồn gốc suy đoán.
+- Chatbot chỉ tư vấn sản phẩm thuộc danh mục đang hoạt động; tra cứu đơn hàng yêu cầu đăng nhập và giới hạn theo chủ đơn. Không gửi thông tin cá nhân của khách hàng sang dịch vụ AI. Nội dung y tế và chính sách chưa có dữ liệu được trả lời theo hướng không khẳng định.

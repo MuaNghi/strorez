@@ -12,13 +12,15 @@ type UserRow = {
   email: string
   password_hash: string
   created_at: string
+  role: 'ADMIN' | 'CUSTOMER'
 }
 
-type SessionUser = {
+export type SessionUser = {
   id: number
   name: string
   email: string
   created_at: string
+  role: 'ADMIN' | 'CUSTOMER'
 }
 
 const auth = new Hono<AuthEnv>()
@@ -119,7 +121,7 @@ function createToken(): string {
   return toHex(crypto.getRandomValues(new Uint8Array(32)))
 }
 
-async function getSessionUser(
+export async function getSessionUser(
   token: string,
   db: D1Database,
 ): Promise<SessionUser | null> {
@@ -127,7 +129,7 @@ async function getSessionUser(
   const now = Math.floor(Date.now() / 1000)
 
   const result = await db.prepare(`
-    SELECT users.id, users.name, users.email, users.created_at
+    SELECT users.id, users.name, users.email, users.created_at, users.role
     FROM sessions
     JOIN users ON users.id = sessions.user_id
     WHERE sessions.token_hash = ? AND sessions.expires_at > ?
@@ -196,7 +198,7 @@ auth.post('/login', async (c) => {
   }
 
   const user = await c.env.DB.prepare(
-    'SELECT id, name, email, password_hash, created_at FROM users WHERE email = ?',
+    'SELECT id, name, email, password_hash, created_at, role FROM users WHERE email = ?',
   ).bind(email).first<UserRow>()
 
   if (!user || !(await verifyPassword(password, user.password_hash))) {
@@ -213,12 +215,12 @@ auth.post('/login', async (c) => {
 
   c.header(
     'Set-Cookie',
-    `store_session=${token}; HttpOnly; Secure; SameSite=Strict; Path=/api/auth; Max-Age=${SESSION_SECONDS}`,
+    `store_session=${token}; HttpOnly; Secure; SameSite=Strict; Path=/api; Max-Age=${SESSION_SECONDS}`,
   )
 
   return c.json({
     message: 'Đăng nhập thành công.',
-    user: { id: user.id, name: user.name, email: user.email, created_at: user.created_at },
+    user: { id: user.id, name: user.name, email: user.email, created_at: user.created_at, role: user.role },
   })
 })
 
@@ -257,7 +259,7 @@ auth.post('/logout', async (c) => {
 
   c.header(
     'Set-Cookie',
-    'store_session=; HttpOnly; Secure; SameSite=Strict; Path=/api/auth; Max-Age=0',
+    'store_session=; HttpOnly; Secure; SameSite=Strict; Path=/api; Max-Age=0',
   )
 
   return c.json({ message: 'Đã đăng xuất.' })
