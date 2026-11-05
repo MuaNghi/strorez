@@ -2450,6 +2450,17 @@ app.post('/chat', async (c) => {
     const freezeDried = /(say thang hoa|thang hoa)/i.test(lowerMessage)
     const adviceIntent = /(tu van|goi y|gioi thieu|phu hop|nen chon|toi thich|so thich|lam qua|qua tang)/i.test(lowerMessage)
     const listIntent = /(liet ke|co nhung gi|cac san pham|san pham nao|dang ban|hien dang ban)/i.test(lowerMessage)
+    const tastePreference = /(vi chua|an chua|thich[^.!?]{0,40}chua|khau vi[^.!?]{0,30}chua)/i.test(lowerMessage)
+      ? {
+          label: 'vị chua',
+          fruitTypes: ['dứa', 'dâu tây', 'ổi'],
+        }
+      : /(it ngot|khong qua ngot|thich[^.!?]{0,40}ngot|vi ngot|ngot tu nhien)/i.test(lowerMessage)
+        ? {
+            label: 'vị ngọt',
+            fruitTypes: ['xoài', 'chuối', 'vải', 'đu đủ'],
+          }
+        : null
     const countMatch = lowerMessage.match(/\b(?:mua|them|tang len|len)\s+(\d+)\s*(?:goi|san pham)?\b/)
     const requestedQuantity = countMatch ? Number(countMatch[1]) : null
     const mentionedForDetails = skuProduct ? [skuProduct] : productMentions
@@ -2781,6 +2792,28 @@ app.post('/chat', async (c) => {
       return c.json({ reply: 'Website chưa cung cấp thông tin để kết luận. Hãy cho mình biết tên sản phẩm cụ thể để kiểm tra từng mục.' })
     }
 
+    if (tastePreference) {
+      const requestedCountMatch = lowerMessage.match(/\b(\d+)\s+(?:san pham|mon|loai)\b/i)
+      const requestedCount = requestedCountMatch ? Math.min(Number(requestedCountMatch[1]), 10) : 3
+      const preferredProducts = results
+        .filter((product) => tastePreference.fruitTypes.some((fruit) =>
+          normalizeText(product.fruit_type || '') === normalizeText(fruit),
+        ))
+        .sort((a, b) => Number(stockOf(b) > 0) - Number(stockOf(a) > 0) || priceOf(a) - priceOf(b))
+        .slice(0, requestedCount)
+      if (!preferredProducts.length) {
+        return c.json({
+          reply: `Storez chưa có thông tin hương vị đã xác minh để lọc chính xác theo sở thích ${tastePreference.label}. Bạn có thể xem danh mục sản phẩm hiện có hoặc cho mình biết loại trái cây bạn muốn thử.`,
+          recommendations: [],
+        })
+      }
+      const details = productResponse(preferredProducts)
+      return c.json({
+        reply: `Storez chưa có dữ liệu xác minh vị thực tế của từng sản phẩm, nên đây chỉ là gợi ý tham khảo theo loại trái cây bạn thích ${tastePreference.label}, không phải cam kết về hương vị:\n${details.lines.join('\n')}`,
+        recommendations: details.recommendations,
+      })
+    }
+
     if (foodCategory || fruitCategory || freezeDried) {
       const selected = filteredByMethod
       if (!selected.length) return c.json({ reply: 'Xin lỗi, hiện chưa có sản phẩm phù hợp trong danh mục Storez.' })
@@ -2804,7 +2837,7 @@ app.post('/chat', async (c) => {
         .sort((a, b) => Number(stockOf(b) > 0) - Number(stockOf(a) > 0) || priceOf(a) - priceOf(b))
         .slice(0, requestedCount)
       const details = productResponse(selected)
-      const tasteIntent = /(vi ngot|ngot tu nhien|vi chua|huong vi)/i.test(lowerMessage)
+      const tasteIntent = /(vi ngot|ngot tu nhien|vi chua|huong vi|thich an chua|thich vi chua|thich an ngot|thich vi ngot)/i.test(lowerMessage)
       const prefix = tasteIntent
         ? 'Dữ liệu Storez chưa xác nhận hương vị cụ thể nên mình không thể kết luận món nào ngọt tự nhiên. Đây là các sản phẩm hiện có để bạn tham khảo:'
         : 'Dựa trên danh mục thực tế Storez hiện có:'
